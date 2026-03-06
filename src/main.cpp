@@ -95,6 +95,9 @@ constexpr unsigned long HEARTBEAT_INTERVAL_MS = 5000;
 unsigned long loopCycleStart = 0;
 unsigned long maxLoopTime = 0;
 
+// Forward declarations
+static void announceWithName();
+
 // =============================================================================
 // Hotkey callbacks
 // =============================================================================
