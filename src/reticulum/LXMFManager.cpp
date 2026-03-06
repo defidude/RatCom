@@ -1,0 +1,232 @@
+#include "LXMFManager.h"
+#include "config/Config.h"
+#include <Transport.h>
+#include <time.h>
+
+LXMFManager* LXMFManager::_instance = nullptr;
+
+bool LXMFManager::begin(ReticulumManager* rns, MessageStore* store) {
+    _rns = rns;
+    _store = store;
+    _instance = this;
+
+    // Register callbacks on the LXMF delivery destination
+    RNS::Destination& dest = _rns->destination();
+    dest.set_packet_callback(onPacketReceived);
+    dest.set_link_established_callback(onLinkEstablished);
+
+    // Unread counts computed lazily on first access (avoid heavy boot-time I/O)
+
+    Serial.println("[LXMF] Manager started");
+    return true;
+}
+
+void LXMFManager::loop() {
+    // Process outgoing queue
+    while (!_outQueue.empty()) {
+        LXMFMessage& msg = _outQueue.front();
+        if (sendDirect(msg)) {
+            // Overwrite on-disk file (QUEUED → SENT or FAILED)
+            if (_store) {
+                _store->saveMessage(msg);
+            }
+            _outQueue.pop_front();
+        } else {
+            // Failed — leave in queue, retry later
+            break;
+        }
+    }
+}
+
+bool LXMFManager::sendMessage(const RNS::Bytes& destHash, const std::string& content, const std::string& title) {
+    LXMFMessage msg;
+    msg.sourceHash = _rns->destination().hash();
+    msg.destHash = destHash;
+    // Use real epoch time when NTP is synced, uptime fallback otherwise
+    time_t now = time(nullptr);
+    if (now > 1700000000) {
+        msg.timestamp = (double)now;
+    } else {
+        msg.timestamp = millis() / 1000.0;
+    }
+    msg.content = content;
+    msg.title = title;
+    msg.incoming = false;
+    msg.status = LXMFStatus::QUEUED;
+
+    // Cap outgoing queue — drop oldest if full
+    if ((int)_outQueue.size() >= RATPUTER_MAX_OUTQUEUE) {
+        Serial.printf("[LXMF] WARNING: Outgoing queue full (%d), dropping oldest\n",
+                      (int)_outQueue.size());
+        _outQueue.pop_front();
+    }
+
+    _outQueue.push_back(msg);
+
+    // Persist immediately so refreshMessages() finds it with QUEUED (yellow) status
+    if (_store) {
+        _store->saveMessage(msg);
+    }
+
+    Serial.printf("[LXMF] Message queued for %s (%d bytes)\n",
+                  destHash.toHex().substr(0, 8).c_str(), (int)content.size());
+    return true;
+}
+
+bool LXMFManager::sendDirect(LXMFMessage& msg) {
+    // Recall the recipient's identity from announce cache
+    RNS::Identity recipientId = RNS::Identity::recall(msg.destHash);
+    if (!recipientId) {
+        Serial.printf("[LXMF] No identity for %s — can't send\n",
+                      msg.destHash.toHex().substr(0, 8).c_str());
+        msg.status = LXMFStatus::FAILED;
+        return true;  // Remove from queue (can't resolve)
+    }
+
+    // Create outgoing destination
+    RNS::Destination outDest(
+        recipientId,
+        RNS::Type::Destination::OUT,
+        RNS::Type::Destination::SINGLE,
+        "lxmf",
+        "delivery"
+    );
+
+    // Pack message
+    std::vector<uint8_t> payload = msg.packFull(_rns->identity());
+    if (payload.empty()) {
+        Serial.println("[LXMF] Failed to pack message");
+        msg.status = LXMFStatus::FAILED;
+        return true;  // Remove from queue
+    }
+    RNS::Bytes payloadBytes(payload.data(), payload.size());
+
+    // Check if it fits in a single packet
+    if (payloadBytes.size() > RNS::Type::Reticulum::MDU) {
+        Serial.printf("[LXMF] Message too large for direct delivery: %d bytes\n",
+                      (int)payloadBytes.size());
+        msg.status = LXMFStatus::FAILED;
+        return true;  // Remove from queue
+    }
+
+    // Send as packet
+    msg.status = LXMFStatus::SENDING;
+    RNS::Packet packet(outDest, payloadBytes);
+    RNS::PacketReceipt receipt = packet.send();
+
+    if (receipt) {
+        msg.status = LXMFStatus::SENT;
+        // Generate message ID
+        msg.messageId = RNS::Identity::full_hash(payloadBytes);
+        Serial.printf("[LXMF] Sent %d bytes to %s\n",
+                      (int)payloadBytes.size(),
+                      msg.destHash.toHex().substr(0, 8).c_str());
+    } else {
+        msg.status = LXMFStatus::FAILED;
+        Serial.println("[LXMF] Send failed");
+    }
+
+    return true;
+}
+
+void LXMFManager::onPacketReceived(const RNS::Bytes& data, const RNS::Packet& packet) {
+    if (!_instance) return;
+    Serial.printf("[LXMF] Packet received: %d bytes\n", (int)data.size());
+    _instance->processIncoming(data.data(), data.size(), packet.destination_hash());
+}
+
+void LXMFManager::onLinkEstablished(RNS::Link& link) {
+    if (!_instance) return;
+    Serial.println("[LXMF] Link established");
+
+    // Set packet callback on the link for receiving messages
+    link.set_packet_callback([](const RNS::Bytes& data, const RNS::Packet& packet) {
+        if (!_instance) return;
+        Serial.printf("[LXMF] Link message received: %d bytes\n", (int)data.size());
+        _instance->processIncoming(data.data(), data.size(), packet.destination_hash());
+    });
+}
+
+void LXMFManager::processIncoming(const uint8_t* data, size_t len, const RNS::Bytes& destHash) {
+    LXMFMessage msg;
+    if (!LXMFMessage::unpackFull(data, len, msg)) {
+        Serial.println("[LXMF] Failed to unpack message");
+        return;
+    }
+
+    // Drop self-messages (loopback from Transport)
+    if (_rns && msg.sourceHash == _rns->destination().hash()) {
+        Serial.println("[LXMF] Dropping loopback self-message");
+        return;
+    }
+
+    msg.destHash = destHash;
+
+    Serial.printf("[LXMF] From %s: \"%s\"\n",
+                  msg.sourceHash.toHex().substr(0, 8).c_str(),
+                  msg.content.c_str());
+
+    // Store message
+    if (_store) {
+        _store->saveMessage(msg);
+    }
+
+    // Track unread
+    std::string peerHex = msg.sourceHash.toHex();
+    _unread[peerHex]++;
+
+    // Notify callback
+    if (_onMessage) {
+        _onMessage(msg);
+    }
+}
+
+const std::vector<std::string>& LXMFManager::conversations() const {
+    if (_store) return _store->conversations();
+    static std::vector<std::string> empty;
+    return empty;
+}
+
+std::vector<LXMFMessage> LXMFManager::getMessages(const std::string& peerHex) const {
+    if (_store) return _store->loadConversation(peerHex);
+    return {};
+}
+
+int LXMFManager::unreadCount(const std::string& peerHex) const {
+    if (!_unreadComputed) {
+        const_cast<LXMFManager*>(this)->computeUnreadFromDisk();
+    }
+    if (peerHex.empty()) {
+        int total = 0;
+        for (auto& kv : _unread) total += kv.second;
+        return total;
+    }
+    auto it = _unread.find(peerHex);
+    return (it != _unread.end()) ? it->second : 0;
+}
+
+void LXMFManager::computeUnreadFromDisk() {
+    _unreadComputed = true;
+    if (!_store) return;
+    for (auto& conv : _store->conversations()) {
+        auto msgs = _store->loadConversation(conv);
+        int count = 0;
+        for (auto& m : msgs) {
+            if (m.incoming && !m.read) count++;
+        }
+        if (count > 0) _unread[conv] = count;
+    }
+    int totalUnread = 0;
+    for (auto& kv : _unread) totalUnread += kv.second;
+    if (totalUnread > 0) {
+        Serial.printf("[LXMF] Restored %d unread messages\n", totalUnread);
+    }
+}
+
+void LXMFManager::markRead(const std::string& peerHex) {
+    _unread[peerHex] = 0;
+    // Persist read status to disk
+    if (_store) {
+        _store->markConversationRead(peerHex);
+    }
+}
