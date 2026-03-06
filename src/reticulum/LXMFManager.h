@@ -9,6 +9,7 @@
 #include <Identity.h>
 #include <functional>
 #include <deque>
+#include <set>
 
 class LXMFManager {
 public:
@@ -55,6 +56,10 @@ private:
     void computeUnreadFromDisk();
     mutable bool _unreadComputed = false;
     mutable std::map<std::string, int> _unread;
+
+    // Deduplication: recently seen message IDs
+    std::set<std::string> _seenMessageIds;
+    static constexpr int MAX_SEEN_IDS = 100;
 
     static LXMFManager* _instance;
 };

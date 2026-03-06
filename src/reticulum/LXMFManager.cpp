@@ -57,11 +57,6 @@ bool LXMFManager::sendMessage(const RNS::Bytes& destHash, const std::string& con
 
     _outQueue.push_back(msg);
 
-    // Persist immediately so refreshMessages() finds it with QUEUED (yellow) status
-    if (_store) {
-        _store->saveMessage(msg);
-    }
-
     Serial.printf("[LXMF] Message queued for %s (%d bytes)\n",
                   destHash.toHex().substr(0, 8).c_str(), (int)content.size());
     return true;
@@ -158,6 +153,18 @@ void LXMFManager::processIncoming(const uint8_t* data, size_t len, const RNS::By
     if (_rns && msg.sourceHash == _rns->destination().hash()) {
         Serial.println("[LXMF] Dropping loopback self-message");
         return;
+    }
+
+    // Deduplication: skip messages we've already processed
+    std::string msgIdHex = msg.messageId.toHex();
+    if (_seenMessageIds.count(msgIdHex)) {
+        Serial.printf("[LXMF] Duplicate message from %s (already seen)\n",
+                      msg.sourceHash.toHex().substr(0, 8).c_str());
+        return;
+    }
+    _seenMessageIds.insert(msgIdHex);
+    if ((int)_seenMessageIds.size() > MAX_SEEN_IDS) {
+        _seenMessageIds.erase(_seenMessageIds.begin());
     }
 
     msg.destHash = destHash;

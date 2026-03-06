@@ -1,5 +1,5 @@
 // =============================================================================
-// RatCom v1.0 — Main Entry Point
+// RatCom v1.2.2 — Main Entry Point
 // C1-C7: Radio, Keyboard, Display, Reticulum, Nodes, WiFi, LXMF
 // =============================================================================
 
@@ -29,6 +29,7 @@
 #include "ui/screens/MessagesScreen.h"
 #include "ui/screens/MessageView.h"
 #include "ui/screens/SettingsScreen.h"
+#include "ui/screens/NameInputScreen.h"
 #include "ui/screens/HelpOverlay.h"
 #include "power/PowerManager.h"
 #include "audio/AudioNotify.h"
@@ -71,6 +72,7 @@ HomeScreen homeScreen;
 NodesScreen nodesScreen;
 MessagesScreen messagesScreen;
 MessageView messageView;
+NameInputScreen nameInputScreen;
 SettingsScreen settingsScreen;
 HelpOverlay helpOverlay;
 
@@ -87,7 +89,7 @@ bool tcpClientsCreated = false;
 unsigned long lastRender = 0;
 unsigned long lastAutoAnnounce = 0;
 constexpr unsigned long RENDER_INTERVAL_MS = 50;  // 20 FPS
-constexpr unsigned long ANNOUNCE_INTERVAL_MS = 30 * 1000;  // 30 seconds (debug — change back to 5*60*1000)
+constexpr unsigned long ANNOUNCE_INTERVAL_MS = 5 * 60 * 1000;  // 5 minutes
 unsigned long lastHeartbeat = 0;
 constexpr unsigned long HEARTBEAT_INTERVAL_MS = 5000;
 unsigned long loopCycleStart = 0;
@@ -119,8 +121,7 @@ void onHotkeySettings() {
 }
 void onHotkeyAnnounce() {
     Serial.println("[HOTKEY] Force announce");
-    rns.announce();
-    ui.statusBar().flashAnnounce();
+    announceWithName();
 }
 void onHotkeyDiag() {
     Serial.println("=== DIAGNOSTIC DUMP ===");
@@ -214,6 +215,27 @@ void onHotkeyRadioTest() {
     Serial.println();
 
     radio.receive();  // Return to RX
+}
+
+// =============================================================================
+// Announce with display name
+// =============================================================================
+
+static RNS::Bytes encodeAnnounceName(const String& name) {
+    if (name.isEmpty()) return {};
+    size_t len = name.length();
+    if (len > 31) len = 31;
+    uint8_t buf[2 + 31];
+    buf[0] = 0x91;                     // msgpack fixarray(1)
+    buf[1] = 0xA0 | (uint8_t)len;     // msgpack fixstr(len)
+    memcpy(buf + 2, name.c_str(), len);
+    return RNS::Bytes(buf, 2 + len);
+}
+
+static void announceWithName() {
+    RNS::Bytes appData = encodeAnnounceName(userConfig.settings().displayName);
+    rns.announce(appData);
+    ui.statusBar().flashAnnounce();
 }
 
 // =============================================================================
@@ -475,7 +497,7 @@ void setup() {
     audio.setVolume(userConfig.settings().audioVolume);
     audio.begin();
 
-    // Boot complete — switch to Home screen
+    // Boot complete
     delay(200);
     bootScreen.setProgress(1.0f, "Ready");
     ui.render();
@@ -483,18 +505,13 @@ void setup() {
     delay(400);
 
     bootComplete = true;
-    ui.setBootMode(false);
     ui.statusBar().setTransportMode("Ratspeak.org");
-
-    // Boot announce — immediate discovery
-    rns.announce();
-    lastAutoAnnounce = millis();
-    Serial.println("[BOOT] Initial announce sent");
 
     // Set up screens
     homeScreen.setReticulumManager(&rns);
     homeScreen.setRadio(&radio);
     homeScreen.setUserConfig(&userConfig);
+    homeScreen.setAnnounceCallback([]() { announceWithName(); });
     nodesScreen.setAnnounceManager(announceManager);
     nodesScreen.setNodeSelectedCallback([](const std::string& peerHex) {
         // Open conversation with selected node
@@ -534,8 +551,34 @@ void setup() {
     tabScreens[TabBar::TAB_NODES] = &nodesScreen;
     tabScreens[TabBar::TAB_SETUP] = &settingsScreen;
 
-    ui.setScreen(&homeScreen);
-    ui.tabBar().setActiveTab(TabBar::TAB_HOME);
+    // Name input flow or straight to home
+    if (userConfig.settings().displayName.isEmpty()) {
+        // Show name input screen (boot mode stays on for clean branded look)
+        nameInputScreen.setDoneCallback([](const String& name) {
+            if (!name.isEmpty()) {
+                userConfig.settings().displayName = name;
+                if (sdStore.isReady()) {
+                    userConfig.save(sdStore, flash);
+                } else {
+                    userConfig.save(flash);
+                }
+            }
+            ui.setBootMode(false);
+            ui.setScreen(&homeScreen);
+            ui.tabBar().setActiveTab(TabBar::TAB_HOME);
+            announceWithName();
+            lastAutoAnnounce = millis();
+            Serial.println("[BOOT] Initial announce sent");
+        });
+        ui.setScreen(&nameInputScreen);
+    } else {
+        ui.setBootMode(false);
+        ui.setScreen(&homeScreen);
+        ui.tabBar().setActiveTab(TabBar::TAB_HOME);
+        announceWithName();
+        lastAutoAnnounce = millis();
+        Serial.println("[BOOT] Initial announce sent");
+    }
 
     // Clear boot loop counter — setup completed successfully
     {
@@ -594,8 +637,7 @@ void loop() {
     // Auto-announce every 5 minutes
     if (bootComplete && millis() - lastAutoAnnounce >= ANNOUNCE_INTERVAL_MS) {
         lastAutoAnnounce = millis();
-        rns.announce();
-        ui.statusBar().flashAnnounce();
+        announceWithName();
         Serial.println("[AUTO] Periodic announce");
     }
 

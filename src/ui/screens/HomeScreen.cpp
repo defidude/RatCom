@@ -14,7 +14,7 @@ static const char* detectPresetName(const UserSettings& s) {
 
 bool HomeScreen::handleKey(const KeyEvent& event) {
     if (event.enter) {
-        if (_rns) _rns->announce();
+        if (_announceCb) _announceCb();
         _announceFlashUntil = millis() + 1500;
         return true;
     }

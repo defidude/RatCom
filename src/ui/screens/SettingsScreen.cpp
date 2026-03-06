@@ -841,7 +841,21 @@ void SettingsScreen::applyRadioPreset(int preset) {
 
     applyAndSave();
     buildRadioMenu();
-    if (_rns) _rns->announce();
+    if (_rns) {
+        // Encode display name as msgpack app_data for announce
+        const String& name = _config ? _config->settings().displayName : String();
+        if (!name.isEmpty()) {
+            size_t len = name.length();
+            if (len > 31) len = 31;
+            uint8_t buf[2 + 31];
+            buf[0] = 0x91;
+            buf[1] = 0xA0 | (uint8_t)len;
+            memcpy(buf + 2, name.c_str(), len);
+            _rns->announce(RNS::Bytes(buf, 2 + len));
+        } else {
+            _rns->announce();
+        }
+    }
     showToast("Preset applied + announced");
     Serial.printf("[SETTINGS] Radio preset %d applied\n", preset);
 }
