@@ -6,28 +6,18 @@ Not an RNode. Not a gateway. A fully self-contained key to Reticulum, with a key
 
 ## What RatCom Does
 
-RatCom turns a small $50 Cardputer Adv into a Reticulum mesh node that can:
-
-- **Encrypted Messages:** Using LXMF protocol (Ed25519 signatures)
-- **Unlimited Identities:** Swap and control multiple identities at any time
-- **Remote Connection over WiFi** Connect to networks over TCP (e.g., `rns.ratspeak.org:4242`)
-- **Store messages and contacts** on flash and SD card with automatic backup
-- **Configure everything on-device** — no config files, no host tools
+RatCom turns a small $50 Cardputer Adv into a Reticulum mesh node with encrypted LXMF messaging using Ed25519 signatures, support for unlimited swappable identities, and both WiFi/TCP and LoRa connectivity. It can connect remotely over WiFi to TCP peers such as `rns.ratspeak.org:4242`, store messages and contacts on flash and SD card with automatic backup, and lets you configure everything directly on-device with no config files or host tools.
 
 ## Features
 
 | Category | Details |
 |----------|---------|
-| **Networking** | Reticulum transport node, path discovery, announce propagation, auto-announce every 5 min |
-| **Messaging** | LXMF encrypted messages, Ed25519 signatures, delivery tracking, per-conversation storage |
-| **LoRa Radio** | SX1262 at 915 MHz, configurable SF (5–12), BW (7.8–500 kHz), CR (4/5–4/8), TX power (2–22 dBm) |
-| **WiFi** | AP mode or STA mode (TCP client to remote nodes) — not concurrent |
-| **Storage** | Dual-backend: LittleFS (1.875 MB on flash) + FAT32 microSD, atomic writes, identity backup |
-| **UI** | 240×135 TFT, signal green on black, 4 tabs (Home/Friends/Msgs/Nodes/Setup)|
-| **Input** | Full QWERTY keyboard (TCA8418 I2C), 8 Ctrl+key hotkeys, tab cycling |
-| **Audio** | ES8311 codec, notification sounds for messages, announces, errors, boot chime |
-| **Power** | Screen dim → off → wake on keypress, configurable timeouts, battery % in status bar |
-| **Diagnostics** | Ctrl+D full dump, Ctrl+T radio test packet, Ctrl+R 5-second RSSI monitor |
+| **Connectivity** | Internet-capable over TCP/WiFi and LoRa-capable over radio |
+| **Messaging** | LXMF encrypted messages, Ed25519 signatures, delivery tracking, and per-conversation storage |
+| **WiFi Modes** | AP mode or STA mode for TCP client connections to remote nodes; not concurrent |
+| **Identity** | Manage and swap between unlimited identities |
+| **Storage** | Store messages and contacts on flash and SD card with automatic backup |
+| **Configuration** | Full on-device setup with no config files or host tools |
 | **Planned** | BLE Sideband (v1.1 stub), GNSS (pins defined), OTA updates (partition reserved) |
 
 ## Prerequisites
