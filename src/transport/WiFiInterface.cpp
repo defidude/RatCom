@@ -142,12 +142,19 @@ void WiFiInterface::sendFrame(WiFiClient& client, const uint8_t* data, size_t le
 int WiFiInterface::readFrame(WiFiClient& client, uint8_t* buffer, size_t maxLen) {
     if (!client.available()) return 0;
 
-    // Look for frame start
     bool inFrame = false;
     bool escaped = false;
     size_t pos = 0;
 
-    while (client.available() && pos < maxLen) {
+    // Tight drain loop: wait up to 10ms for complete frame (AP clients are on LAN)
+    unsigned long deadline = millis() + 10;
+    while (pos < maxLen) {
+        if (!client.available()) {
+            if (millis() >= deadline) break;
+            delay(1);
+            continue;
+        }
+
         uint8_t b = client.read();
 
         if (b == FRAME_START) {

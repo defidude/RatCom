@@ -33,6 +33,15 @@ void TCPClientInterface::tryConnect() {
     Serial.printf("[TCP] Connecting to %s:%d...\n", _host.c_str(), _port);
 
     if (_client.connect(_host.c_str(), _port, TCP_CONNECT_TIMEOUT_MS)) {
+        // Reset HDLC frame state for new connection
+        _inFrame = false;
+        _escaped = false;
+        _rxPos = 0;
+        _lastRxTime = millis();
+
+        // Set TCP write timeout to prevent blocking on half-open sockets
+        _client.setTimeout(5);
+
         Serial.printf("[TCP] Connected to %s:%d\n", _host.c_str(), _port);
     } else {
         Serial.printf("[TCP] Failed to connect to %s:%d\n", _host.c_str(), _port);
@@ -42,19 +51,32 @@ void TCPClientInterface::tryConnect() {
 void TCPClientInterface::loop() {
     if (!_online) return;
 
-    // Auto-reconnect
+    // Auto-reconnect (only if WiFi is connected)
     if (!_client.connected()) {
+        if (WiFi.status() != WL_CONNECTED) return;
         if (millis() - _lastAttempt >= TCP_RECONNECT_INTERVAL_MS) {
             tryConnect();
         }
         return;
     }
 
-    // Read incoming frames (limit 2 per loop to avoid starving other subsystems)
-    for (int i = 0; i < 2 && _client.available(); i++) {
+    // Keepalive: if no RX for 5 minutes, force reconnect (NAT timeout detection)
+    if (_lastRxTime > 0 && millis() - _lastRxTime >= TCP_KEEPALIVE_TIMEOUT_MS) {
+        Serial.printf("[TCP] No RX for %lus, forcing reconnect to %s:%d\n",
+                      (millis() - _lastRxTime) / 1000, _host.c_str(), _port);
+        _client.stop();
+        _inFrame = false;
+        _escaped = false;
+        _rxPos = 0;
+        return;
+    }
+
+    // Drain multiple incoming frames per loop (up to 10)
+    for (int i = 0; i < 10 && _client.available(); i++) {
         unsigned long rxStart = millis();
-        int len = readFrame(_rxBuffer, sizeof(_rxBuffer));
+        int len = readFrame();
         if (len > 0) {
+            _lastRxTime = millis();
             RNS::Bytes data(_rxBuffer, len);
             Serial.printf("[TCP] RX %d bytes from %s:%d (%lums)\n",
                           len, _host.c_str(), _port, millis() - rxStart);
@@ -88,42 +110,55 @@ void TCPClientInterface::sendFrame(const uint8_t* data, size_t len) {
     _client.flush();
 }
 
-int TCPClientInterface::readFrame(uint8_t* buffer, size_t maxLen) {
+int TCPClientInterface::readFrame() {
     if (!_client.available()) return 0;
 
-    bool inFrame = false;
-    bool escaped = false;
-    size_t pos = 0;
+    // Uses persistent member state: _inFrame, _escaped, _rxPos
+    // This allows frames split across TCP segments to be reassembled correctly
     int bytesRead = 0;
-    constexpr int MAX_BYTES_PER_CALL = 512;
+    constexpr int MAX_BYTES_PER_CALL = 1024;
 
-    while (_client.available() && pos < maxLen && bytesRead < MAX_BYTES_PER_CALL) {
+    while (_client.available() && _rxPos < sizeof(_rxBuffer) && bytesRead < MAX_BYTES_PER_CALL) {
         uint8_t b = _client.read();
         bytesRead++;
 
         if (b == FRAME_START) {
-            if (inFrame && pos > 0) {
-                return pos;  // End of frame
+            if (_inFrame && _rxPos > 0) {
+                // End of frame — return length, caller reads from _rxBuffer
+                size_t frameLen = _rxPos;
+                _inFrame = false;
+                _escaped = false;
+                _rxPos = 0;
+                return frameLen;
             }
-            inFrame = true;
-            pos = 0;
+            _inFrame = true;
+            _rxPos = 0;
+            _escaped = false;
             continue;
         }
 
-        if (!inFrame) continue;
+        if (!_inFrame) continue;
 
         if (b == FRAME_ESC) {
-            escaped = true;
+            _escaped = true;
             continue;
         }
 
-        if (escaped) {
-            buffer[pos++] = b ^ FRAME_XOR;
-            escaped = false;
+        if (_escaped) {
+            _rxBuffer[_rxPos++] = b ^ FRAME_XOR;
+            _escaped = false;
         } else {
-            buffer[pos++] = b;
+            _rxBuffer[_rxPos++] = b;
         }
     }
 
-    return 0;  // Incomplete frame
+    // Buffer overflow protection
+    if (_rxPos >= sizeof(_rxBuffer)) {
+        Serial.printf("[TCP] Frame too large (%d bytes), dropping\n", (int)_rxPos);
+        _inFrame = false;
+        _escaped = false;
+        _rxPos = 0;
+    }
+
+    return 0;  // Incomplete frame — state preserved for next call
 }

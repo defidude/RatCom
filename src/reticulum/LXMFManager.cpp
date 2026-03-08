@@ -72,6 +72,12 @@ bool LXMFManager::sendDirect(LXMFMessage& msg) {
     RNS::Identity recipientId = RNS::Identity::recall(msg.destHash);
     if (!recipientId) {
         msg.retries++;
+        // Proactively request path on first retry and every 10 retries
+        if (msg.retries == 1 || msg.retries % 10 == 0) {
+            RNS::Transport::request_path(msg.destHash);
+            Serial.printf("[LXMF] Requested path for %s\n",
+                          msg.destHash.toHex().substr(0, 8).c_str());
+        }
         if (msg.retries >= 30) {
             Serial.printf("[LXMF] recall FAILED for %s after %d retries\n",
                           msg.destHash.toHex().substr(0, 8).c_str(), msg.retries);

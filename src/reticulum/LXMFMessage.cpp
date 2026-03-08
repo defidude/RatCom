@@ -56,12 +56,13 @@ static bool mpReadFloat64(const uint8_t* data, size_t len, size_t& pos, double& 
     return true;
 }
 
-// Read MsgPack string or bin (accept both str and bin types for interop)
+// Read MsgPack string or bin (accept both str and bin types for cross-platform interop)
 static bool mpReadString(const uint8_t* data, size_t len, size_t& pos, std::string& str) {
     if (pos >= len) return false;
     uint8_t b = data[pos];
     size_t slen = 0;
 
+    // MsgPack str formats
     if ((b & 0xE0) == 0xA0) {
         // fixstr
         slen = b & 0x1F;
@@ -77,8 +78,10 @@ static bool mpReadString(const uint8_t* data, size_t len, size_t& pos, std::stri
         if (pos + 2 > len) return false;
         slen = ((size_t)data[pos] << 8) | data[pos + 1];
         pos += 2;
-    } else if (b == 0xC4) {
-        // bin8 (LXMF may encode title/content as bin)
+    }
+    // MsgPack bin formats (Python LXMF sends title/content as bin)
+    else if (b == 0xC4) {
+        // bin8
         pos++;
         if (pos >= len) return false;
         slen = data[pos++];
@@ -238,8 +241,8 @@ std::vector<uint8_t> LXMFMessage::packContent(double timestamp, const std::strin
     // fixarray(4): [timestamp, title, content, fields] — LXMF spec order
     buf.push_back(0x94);
     mpPackFloat64(buf, timestamp);
-    mpPackString(buf, title);
-    mpPackString(buf, content);
+    mpPackBin(buf, title);      // LXMF spec: title/content as bin, not str
+    mpPackBin(buf, content);
     // empty fixmap for fields
     buf.push_back(0x80);
 
@@ -254,23 +257,33 @@ std::vector<uint8_t> LXMFMessage::packFull(const RNS::Identity& signingIdentity)
         return {};
     }
 
-    // Sign: dest_hash || source_hash || packed_content (LXMF spec)
-    std::vector<uint8_t> signable;
-    signable.reserve(32 + packed.size());
-    signable.insert(signable.end(), destHash.data(), destHash.data() + 16);
-    signable.insert(signable.end(), sourceHash.data(), sourceHash.data() + 16);
-    signable.insert(signable.end(), packed.begin(), packed.end());
+    // Sign: hashed_part + message_hash (LXMF spec, matches Python reference)
+    // hashed_part = dest_hash(16) + src_hash(16) + packed_content
+    std::vector<uint8_t> hashed_part;
+    hashed_part.reserve(32 + packed.size());
+    hashed_part.insert(hashed_part.end(), destHash.data(), destHash.data() + 16);
+    hashed_part.insert(hashed_part.end(), sourceHash.data(), sourceHash.data() + 16);
+    hashed_part.insert(hashed_part.end(), packed.begin(), packed.end());
 
-    RNS::Bytes signableBytes(signable.data(), signable.size());
+    RNS::Bytes hashedBytes(hashed_part.data(), hashed_part.size());
+    RNS::Bytes messageHash = RNS::Identity::full_hash(hashedBytes);
+
+    std::vector<uint8_t> signed_part;
+    signed_part.reserve(hashed_part.size() + messageHash.size());
+    signed_part.insert(signed_part.end(), hashed_part.begin(), hashed_part.end());
+    signed_part.insert(signed_part.end(), messageHash.data(), messageHash.data() + messageHash.size());
+
+    RNS::Bytes signableBytes(signed_part.data(), signed_part.size());
     RNS::Bytes sig = signingIdentity.sign(signableBytes);
     if (sig.size() < 64) {
         Serial.println("[LXMF] ERROR: signing failed, cannot pack");
         return {};
     }
 
-    // Wire (opportunistic SINGLE): [src_hash:16][signature:64][packed_content]
+    // Wire: [dest_hash:16][src_hash:16][signature:64][packed_content]
     std::vector<uint8_t> payload;
-    payload.reserve(16 + 64 + packed.size());
+    payload.reserve(16 + 16 + 64 + packed.size());
+    payload.insert(payload.end(), destHash.data(), destHash.data() + 16);
     payload.insert(payload.end(), sourceHash.data(), sourceHash.data() + 16);
     payload.insert(payload.end(), sig.data(), sig.data() + 64);
     payload.insert(payload.end(), packed.begin(), packed.end());
@@ -279,19 +292,20 @@ std::vector<uint8_t> LXMFMessage::packFull(const RNS::Identity& signingIdentity)
 }
 
 bool LXMFMessage::unpackFull(const uint8_t* data, size_t len, LXMFMessage& msg) {
-    // Minimum: 16 (source) + 64 (sig) + 1 (array header) + 9 (timestamp) + 1 (empty str) + 1 (empty str) + 1 (empty map) = 93
-    if (len < 93) {
+    // Wire: [dest_hash:16][src_hash:16][signature:64][packed_content]
+    // Minimum: 16 + 16 + 64 + 1 (array) + 9 (timestamp) + 1 (empty) + 1 (empty) + 1 (map) = 109
+    if (len < 97) {  // 96-byte header + at least 1 byte content
         Serial.printf("[LXMF] Payload too short: %d bytes\n", (int)len);
         return false;
     }
 
-    // Wire format: source_hash(16) + signature(64) + packed_content
-    msg.sourceHash = RNS::Bytes(data, 16);
-    msg.signature = RNS::Bytes(data + 16, 64);
+    msg.destHash = RNS::Bytes(data, 16);
+    msg.sourceHash = RNS::Bytes(data + 16, 16);
+    msg.signature = RNS::Bytes(data + 32, 64);
 
-    // Parse MsgPack content (after source hash and signature)
-    const uint8_t* content = data + 16 + 64;
-    size_t contentLen = len - 16 - 64;
+    // Parse MsgPack content (after 96-byte header)
+    const uint8_t* content = data + 96;
+    size_t contentLen = len - 96;
     size_t pos = 0;
 
     // Expect fixarray(4) or fixarray(3)
@@ -314,13 +328,13 @@ bool LXMFMessage::unpackFull(const uint8_t* data, size_t len, LXMFMessage& msg) 
         return false;
     }
 
-    // [1] title (string) — LXMF spec order
+    // [1] title (string or bin)
     if (!mpReadString(content, contentLen, pos, msg.title)) {
         Serial.println("[LXMF] Failed to read title");
         return false;
     }
 
-    // [2] content (string)
+    // [2] content (string or bin)
     if (!mpReadString(content, contentLen, pos, msg.content)) {
         Serial.println("[LXMF] Failed to read content");
         return false;
@@ -331,8 +345,7 @@ bool LXMFMessage::unpackFull(const uint8_t* data, size_t len, LXMFMessage& msg) 
         mpSkipValue(content, contentLen, pos);
     }
 
-    // Generate message ID: full_hash(dest_hash + source_hash + packed_content)
-    // Note: dest_hash is set by the caller (from the packet destination)
+    // Generate message ID from full payload
     RNS::Bytes fullPayload(data, len);
     msg.messageId = RNS::Identity::full_hash(fullPayload);
 

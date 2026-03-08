@@ -47,11 +47,15 @@ void NodesScreen::refreshList() {
         }
         unsigned long ago = (millis() - node.lastSeen) / 1000;
         if (ago < 60) {
-            snprintf(line, sizeof(line), "%-20s %3lus %dhop",
-                     displayName.c_str(), ago, node.hops);
+            if (node.hops < 128)
+                snprintf(line, sizeof(line), "%-20s %3lus %dhop", displayName.c_str(), ago, node.hops);
+            else
+                snprintf(line, sizeof(line), "%-20s %3lus", displayName.c_str(), ago);
         } else {
-            snprintf(line, sizeof(line), "%-20s %3lum %dhop",
-                     displayName.c_str(), ago / 60, node.hops);
+            if (node.hops < 128)
+                snprintf(line, sizeof(line), "%-20s %3lum %dhop", displayName.c_str(), ago / 60, node.hops);
+            else
+                snprintf(line, sizeof(line), "%-20s %3lum", displayName.c_str(), ago / 60);
         }
         _list.addItem(line);
 

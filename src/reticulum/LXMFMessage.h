@@ -33,7 +33,7 @@ struct LXMFMessage {
     uint32_t receiveCounter = 0; // Monotonic receive order counter
 
     // === Wire format (opportunistic) ===
-    // source_hash(16) + signature(64) + msgpack([timestamp, title, content, fields_map])
+    // dest_hash(16) + source_hash(16) + signature(64) + msgpack([timestamp, title, content, fields_map])
     // Signature covers: dest_hash + source_hash + msgpack_content + message_hash
 
     // Pack content portion only (for signing)

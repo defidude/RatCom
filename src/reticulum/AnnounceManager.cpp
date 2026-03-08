@@ -5,40 +5,99 @@
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 
+// Skip one MsgPack value at data[pos], return new pos (or len on error)
+static size_t mpSkipValue(const uint8_t* data, size_t len, size_t pos) {
+    if (pos >= len) return len;
+    uint8_t b = data[pos];
+    // positive fixint / negative fixint
+    if (b <= 0x7F || b >= 0xE0) return pos + 1;
+    // fixmap: skip N*2 elements
+    if ((b & 0xF0) == 0x80) {
+        size_t n = (b & 0x0F) * 2;
+        pos++;
+        for (size_t j = 0; j < n && pos < len; j++) pos = mpSkipValue(data, len, pos);
+        return pos;
+    }
+    // fixarray: skip N elements
+    if ((b & 0xF0) == 0x90) {
+        size_t n = b & 0x0F;
+        pos++;
+        for (size_t j = 0; j < n && pos < len; j++) pos = mpSkipValue(data, len, pos);
+        return pos;
+    }
+    // fixstr
+    if ((b & 0xE0) == 0xA0) return pos + 1 + (b & 0x1F);
+    // nil, false, true
+    if (b == 0xC0 || b == 0xC2 || b == 0xC3) return pos + 1;
+    // bin8
+    if (b == 0xC4 && pos + 1 < len) return pos + 2 + data[pos + 1];
+    // bin16
+    if (b == 0xC5 && pos + 2 < len) return pos + 3 + ((size_t)data[pos + 1] << 8 | data[pos + 2]);
+    // float32
+    if (b == 0xCA) return pos + 5;
+    // float64
+    if (b == 0xCB) return pos + 9;
+    // uint8, int8
+    if (b == 0xCC || b == 0xD0) return pos + 2;
+    // uint16, int16
+    if (b == 0xCD || b == 0xD1) return pos + 3;
+    // uint32, int32
+    if (b == 0xCE || b == 0xD2) return pos + 5;
+    // uint64, int64
+    if (b == 0xCF || b == 0xD3) return pos + 9;
+    // str8
+    if (b == 0xD9 && pos + 1 < len) return pos + 2 + data[pos + 1];
+    // str16
+    if (b == 0xDA && pos + 2 < len) return pos + 3 + ((size_t)data[pos + 1] << 8 | data[pos + 2]);
+    return len; // unknown type
+}
+
 // Try to extract display name from MsgPack-encoded app_data.
-// Sideband format: MsgPack array where element[0] is display name string.
+// Two-pass: prefer str elements (display name), fall back to bin (NomadNet compat).
 static std::string extractMsgPackName(const uint8_t* data, size_t len) {
     if (len < 2) return "";
     uint8_t b = data[0];
     size_t pos = 0;
+    size_t arrLen = 0;
 
-    // fixarray (0x90-0x9F): element count in low nibble
+    // fixarray (0x90-0x9F)
     if ((b & 0xF0) == 0x90) {
-        if ((b & 0x0F) == 0) return "";
+        arrLen = b & 0x0F;
+        if (arrLen == 0) return "";
         pos = 1;
     }
     // array16 (0xDC)
     else if (b == 0xDC && len >= 3) {
+        arrLen = ((size_t)data[1] << 8) | data[2];
         pos = 3;
     }
     else return "";  // Not a MsgPack array
 
-    if (pos >= len) return "";
-    b = data[pos];
-    size_t slen = 0;
-
-    // fixstr (0xA0-0xBF)
-    if ((b & 0xE0) == 0xA0) { slen = b & 0x1F; pos++; }
-    // str8 (0xD9)
-    else if (b == 0xD9 && pos + 1 < len) { slen = data[pos+1]; pos += 2; }
-    // str16 (0xDA)
-    else if (b == 0xDA && pos + 2 < len) {
-        slen = ((size_t)data[pos+1] << 8) | data[pos+2]; pos += 3;
+    // Pass 1: scan for first non-empty STR element
+    size_t savedPos = pos;
+    for (size_t i = 0; i < arrLen && pos < len; i++) {
+        b = data[pos];
+        size_t slen = 0;
+        if ((b & 0xE0) == 0xA0) { slen = b & 0x1F; pos++; }
+        else if (b == 0xD9 && pos + 1 < len) { slen = data[pos + 1]; pos += 2; }
+        else if (b == 0xDA && pos + 2 < len) { slen = ((size_t)data[pos + 1] << 8) | data[pos + 2]; pos += 3; }
+        else { pos = mpSkipValue(data, len, pos); continue; }
+        if (slen > 0 && pos + slen <= len) return std::string((const char*)&data[pos], slen);
+        pos += slen;
     }
-    else return "";  // First element not a string
 
-    if (pos + slen > len) return "";
-    return std::string((const char*)&data[pos], slen);
+    // Pass 2: scan for first non-empty BIN element (fallback)
+    pos = savedPos;
+    for (size_t i = 0; i < arrLen && pos < len; i++) {
+        b = data[pos];
+        size_t slen = 0;
+        if (b == 0xC4 && pos + 1 < len) { slen = data[pos + 1]; pos += 2; }
+        else if (b == 0xC5 && pos + 2 < len) { slen = ((size_t)data[pos + 1] << 8) | data[pos + 2]; pos += 3; }
+        else { pos = mpSkipValue(data, len, pos); continue; }
+        if (slen > 0 && pos + slen <= len) return std::string((const char*)&data[pos], slen);
+        pos += slen;
+    }
+    return "";
 }
 
 // Tighter character filter — only safe displayable characters
@@ -83,10 +142,24 @@ void AnnounceManager::received_announce(
     // Extract display name from app_data
     std::string name;
     if (app_data.size() > 0) {
-        // Try MsgPack first (Sideband format)
         std::string rawName = extractMsgPackName(app_data.data(), app_data.size());
         if (rawName.empty()) {
-            rawName = app_data.toString();  // Fall back to raw string
+            // Only use raw bytes as name if ALL are printable ASCII
+            bool isText = app_data.size() > 0 && app_data.size() <= 32;
+            for (size_t i = 0; isText && i < app_data.size(); i++) {
+                uint8_t c = app_data.data()[i];
+                if (c < 0x20 || c > 0x7E) isText = false;
+            }
+            if (isText) {
+                rawName = app_data.toString();
+            }
+        }
+        if (rawName.empty() && app_data.size() > 0) {
+            Serial.printf("[ANNOUNCE] Unknown app_data format (%d bytes): ", (int)app_data.size());
+            for (size_t i = 0; i < std::min((size_t)32, app_data.size()); i++) {
+                Serial.printf("%02X ", app_data.data()[i]);
+            }
+            Serial.println();
         }
         name = sanitizeName(rawName);
         Serial.printf(" name=\"%s\"", name.c_str());
