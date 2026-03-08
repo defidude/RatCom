@@ -132,6 +132,7 @@ void onHotkeySettings() {
     ui.tabBar().setActiveTab(TabBar::TAB_SETUP);
     ui.setScreen(&settingsScreen);
 }
+static void announceWithName();
 void onHotkeyAnnounce() {
     Serial.println("[HOTKEY] Force announce");
     announceWithName();
