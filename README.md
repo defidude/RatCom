@@ -4,10 +4,7 @@
 
 **Encrypted mesh messenger for the M5Stack Cardputer**
 
-<table><tr>
-<td><img src="assets/card1.JPG" width="100%" alt="RatCom with LoRa antenna attached, showing boot screen"></td>
-<td><img src="assets/card2.JPG" width="100%" alt="RatCom running, showing the messaging interface"></td>
-</tr></table>
+[![Ratspeak Demo](https://img.youtube.com/vi/F6I6fkMPxgI/maxresdefault.jpg)](https://www.youtube.com/watch?v=F6I6fkMPxgI)
 
 A $50 handheld that runs [Reticulum](https://reticulum.network/) — no phone, no internet, no infrastructure required.
 
