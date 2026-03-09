@@ -124,6 +124,10 @@ bool ReticulumManager::begin(SX1262* radio, FlashStore* flash) {
     _reticulum.start();
     Serial.println("[RNS] Reticulum started (Transport Node)");
 
+    // Load persisted known destinations so Identity::recall() works
+    // immediately after reboot for previously-seen nodes.
+    RNS::Identity::load_known_destinations();
+
     // Load or create identity
     if (!loadOrCreateIdentity()) {
         Serial.println("[RNS] ERROR: Identity creation failed!");
