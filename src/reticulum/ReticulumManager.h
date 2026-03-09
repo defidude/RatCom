@@ -25,7 +25,7 @@ public:
     virtual bool directory_exists(const char* directory_path) override;
     virtual bool create_directory(const char* directory_path) override;
     virtual bool remove_directory(const char* directory_path) override;
-    virtual std::list<std::string> list_directory(const char* directory_path) override;
+    virtual std::list<std::string> list_directory(const char* directory_path, Callbacks::DirectoryListing callback = nullptr) override;
     virtual size_t storage_size() override;
     virtual size_t storage_available() override;
 };

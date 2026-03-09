@@ -67,13 +67,15 @@ bool LittleFSFileSystem::remove_directory(const char* directory_path) {
     return LittleFS.rmdir(directory_path);
 }
 
-std::list<std::string> LittleFSFileSystem::list_directory(const char* directory_path) {
+std::list<std::string> LittleFSFileSystem::list_directory(const char* directory_path, Callbacks::DirectoryListing callback) {
     std::list<std::string> entries;
     File dir = LittleFS.open(directory_path);
     if (!dir || !dir.isDirectory()) return entries;
     File f = dir.openNextFile();
     while (f) {
-        entries.push_back(f.name());
+        const char* name = f.name();
+        entries.push_back(name);
+        if (callback) callback(name);
         f = dir.openNextFile();
     }
     return entries;
