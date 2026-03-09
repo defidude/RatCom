@@ -4,7 +4,9 @@
 
 **Encrypted mesh messenger for the M5Stack Cardputer**
 
-[![Ratspeak Demo](https://img.youtube.com/vi/F6I6fkMPxgI/hqdefault.jpg)](https://www.youtube.com/watch?v=F6I6fkMPxgI)
+[![Ratspeak Demo](https://img.youtube.com/vi/F6I6fkMPxgI/maxresdefault.jpg)](https://www.youtube.com/watch?v=F6I6fkMPxgI)
+
+<sub>[▶ YouTube: Reticulum Standalone - T-Deck & Cardputer Adv](https://www.youtube.com/watch?v=F6I6fkMPxgI)</sub>
 
 A $50 handheld that runs [Reticulum](https://reticulum.network/) — no phone, no internet, no infrastructure required.
 
