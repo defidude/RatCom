@@ -1,5 +1,5 @@
 // =============================================================================
-// RatCom v1.5.5 — Main Entry Point
+// RatCom v1.5.6 — Main Entry Point
 // C1-C7: Radio, Keyboard, Display, Reticulum, Nodes, WiFi, LXMF
 // =============================================================================
 
@@ -39,6 +39,8 @@
 #include <list>
 #include <esp_system.h>
 #include <freertos/task.h>
+
+SET_LOOP_TASK_STACK_SIZE(16384);  // 16KB — needed for Ed25519 crypto in RNS boot
 
 // --- Hardware ---
 SPIClass loraSPI(HSPI);

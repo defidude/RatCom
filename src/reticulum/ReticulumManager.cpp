@@ -110,13 +110,15 @@ bool ReticulumManager::begin(SX1262* radio, FlashStore* flash) {
             if (!LittleFS.exists(name)) {
                 char sdPath[64];
                 snprintf(sdPath, sizeof(sdPath), "/ratcom/transport%s", name);
-                uint8_t buf[4096];
+                uint8_t* buf = (uint8_t*)malloc(4096);
+                if (!buf) { Serial.println("[RNS] SD restore: malloc failed"); continue; }
                 size_t len = 0;
-                if (_sd->readFile(sdPath, buf, sizeof(buf), len) && len > 0) {
+                if (_sd->readFile(sdPath, buf, 4096, len) && len > 0) {
                     File f = LittleFS.open(name, "w");
                     if (f) { f.write(buf, len); f.close(); }
                     Serial.printf("[RNS] Restored %s from SD (%d bytes)\n", name, (int)len);
                 }
+                free(buf);
             }
         }
     }
@@ -138,9 +140,6 @@ bool ReticulumManager::begin(SX1262* radio, FlashStore* flash) {
     // Cap table sizes to prevent OOM on memory-constrained ESP32 (320KB RAM)
     RNS::Transport::path_table_maxsize(16);
     RNS::Transport::announce_table_maxsize(16);
-    RNS::Transport::hashlist_maxsize(32);
-    RNS::Transport::max_pr_tags(8);
-    RNS::Identity::known_destinations_maxsize(16);
     _reticulum.start();
     Serial.println("[RNS] Reticulum started (Transport Node)");
 
