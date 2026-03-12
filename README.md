@@ -1,30 +1,28 @@
 <div align="center">
 
-# ratcom
+# [Ratcom](https://ratspeak.org/)
 
-**Encrypted mesh messenger for the M5Stack Cardputer**
+**Standalone Reticulum for the M5Stack Cardputer**
 
+</div>
+
+Ratcom turns an [M5Stack Cardputer Adv](https://docs.m5stack.com/en/core/M5Cardputer%20Adv) into a full standalone [Reticulum](https://reticulum.network/) node. It's not just an RNode which requires another device — it's the complete setup.
+
+End-to-end encrypted [LXMF](https://github.com/markqvist/LXMF) messaging over LoRa, TCP over WiFi for bridging to the wider Reticulum network, node discovery, identity management, and more.
+
+<div align="center">
+
+---
 [![Ratspeak Demo](https://img.youtube.com/vi/F6I6fkMPxgI/maxresdefault.jpg)](https://www.youtube.com/watch?v=F6I6fkMPxgI)
 
 <sub>[▶ YouTube: Reticulum Standalone - T-Deck & Cardputer Adv](https://www.youtube.com/watch?v=F6I6fkMPxgI)</sub>
 
+---
 </div>
 
----
+## Installing
 
-RatCom turns an [M5Stack Cardputer Adv](https://docs.m5stack.com/en/core/M5Cardputer%20Adv) into a self-contained encrypted mesh node. It's not an RNode and it's not a gateway — it's a complete Reticulum instance with a keyboard and a screen that fits in your pocket.
-
-You get end-to-end encrypted [LXMF](https://github.com/markqvist/LXMF) messaging over LoRa, WiFi TCP bridging to the wider Reticulum network, contact management, multiple swappable identities, and configurable radio — all without ever touching a config file.
-
-## Get one
-
-1. Buy an **M5Stack Cardputer Adv** (~$50 — [M5Stack](https://shop.m5stack.com/), [AliExpress](https://aliexpress.com), or Amazon)
-2. Attach a **915 MHz LoRa antenna** (SMA, included with some kits)
-3. Flash the firmware
-
-### Flash it
-
-The easiest way is the **[web flasher](https://ratspeak.org/download.html)** — plug in USB, click flash, done.
+The easiest way is the **[web flasher](https://ratspeak.org/download.html)** — enable download mode (hold G0 while plugging it in), select the USB, click flash, done.
 
 To build from source:
 
@@ -35,43 +33,42 @@ pip install platformio
 python3 -m platformio run -e ratputer_915 -t upload
 ```
 
-First build takes a couple minutes while PlatformIO pulls the ESP32-S3 toolchain. After that it's fast.
+> If upload fails at 921600 baud, use esptool directly at 460800 or lower. See [docs/BUILDING.md](docs/BUILDING.md) for details.
 
-> If upload fails at 921600 baud, use esptool directly at 460800. See [docs/BUILDING.md](docs/BUILDING.md) for details.
+## Usage
 
-## Using it
+On first boot, Ratcom generates a Reticulum identity and shows a name input screen. Your LXMF address (32-character hex string) is what you share with contacts.
 
-On first boot, RatCom generates a Reticulum identity and drops you on the Home tab. Your LXMF address (a 32-character hex string) is what you share with people so they can reach you.
+**Tabs:** Home, Messages, Nodes, Setup — navigate with `,` and `/` (arrow) keys.
 
-**Tabs:** Home, Messages, Nodes, Setup — navigate with `,` and `/` keys.
+**Manually announce:** To send an announcement manually, press the trackball or enter on the home tab.
 
 **Sending a message:** Select a node from the Nodes tab, press Enter, type, press Enter to send. Messages are encrypted end-to-end with Ed25519 signatures.
+**Radio presets** (Setup → Radio):
+- **Long Range** — SF12, 62.5 kHz, 22 dBm. Longest distance, slow.
+- **Balanced** — SF9, 125 kHz, 17 dBm. Medium distance, medium.
+- **Fast** — SF7, 250 kHz, 14 dBm. Shortest distance, fast.
 
-**Radio presets** (Settings → Radio):
-- **Long Range** — SF12, 62.5 kHz, 22 dBm. Maximum distance, very slow.
-- **Balanced** — SF9, 125 kHz, 17 dBm. Good default.
-- **Fast** — SF7, 250 kHz, 14 dBm. Short range, quick transfers.
+All radio parameters are individually tunable. Changes apply immediately, no reboot. Please operate in accordance with local laws, as you are solely responsible for knowing which regulations and requirements apply to your jurisdiction.
 
-All radio parameters are individually tunable. Changes apply immediately, no reboot.
+### WiFi Bridging (Alpha)
 
-### WiFi bridging
+Use **STA mode** to connect to existing WiFi and reach remote nodes like `rns.ratspeak.org:4242`.
 
-This is the killer feature for desktop users. RatCom can bridge your laptop to the LoRa mesh:
+To bridge LoRa with Reticulum on your computer:
 
-1. Set WiFi to **AP mode** (creates `ratcom-XXXX`, password: `ratspeak`)
-2. Connect your laptop to that network
+1. Set WiFi to **AP mode** in Setup → Network (creates `ratcom-XXXX`, password: `ratspeak`)
+2. Connect your computer to that network
 3. Add to your Reticulum config:
 
 ```ini
-[[ratcom]]
+[[ratdeck]]
   type = TCPClientInterface
   target_host = 192.168.4.1
   target_port = 4242
 ```
 
-Now your desktop Reticulum instance can reach the LoRa mesh through RatCom's radio.
-
-Or use **STA mode** to connect RatCom to your existing WiFi and reach remote nodes like `rns.ratspeak.org:4242`.
+Note: WiFi bridging methods and interfaces will be revamped with Ratspeak's client release, therefore, it's unlikely AP mode works at all currently.
 
 ## Docs
 
