@@ -120,7 +120,7 @@ void SettingsScreen::buildTCPMenu() {
     _list.addItem("< Back");
 }
 
-void SettingsScreen::addTCPConnection(const std::string& hostPort) {
+void SettingsScreen::addTCPConnection(const std::string& host, uint16_t port) {
     if (!_config) return;
     auto& s = _config->settings();
     if (s.tcpConnections.size() >= MAX_TCP_CONNECTIONS) {
@@ -129,16 +129,8 @@ void SettingsScreen::addTCPConnection(const std::string& hostPort) {
     }
 
     TCPEndpoint ep;
-    // Parse "host:port" or just "host"
-    size_t colon = hostPort.rfind(':');
-    if (colon != std::string::npos && colon > 0) {
-        ep.host = hostPort.substr(0, colon).c_str();
-        ep.port = (uint16_t)atoi(hostPort.substr(colon + 1).c_str());
-        if (ep.port == 0) ep.port = TCP_DEFAULT_PORT;
-    } else {
-        ep.host = hostPort.c_str();
-    }
-
+    ep.host = host.c_str();
+    ep.port = port;
     if (ep.host.isEmpty()) return;
 
     s.tcpConnections.push_back(ep);
@@ -387,9 +379,32 @@ void SettingsScreen::commitEdit(const std::string& value) {
         applyAndSave();
         buildRadioMenu();
     } else if (_subMenu == MENU_TCP) {
-        // field 99 = add new TCP connection
         if (_editField == 99 && !value.empty()) {
-            addTCPConnection(value);
+            // Host submitted — stash and open port input
+            _tcpPendingHost = value;
+            _editField = 100;
+            _editing = true;
+            _editLabel = "Port (1-9999):";
+            _editInput.clear();
+            _editInput.setText("4242");
+            _editInput.setActive(true);
+            _editInput.setMaxLength(5);
+            _editInput.setNumericOnly(true);
+            _editInput.setSubmitCallback([this](const std::string& v) {
+                commitEdit(v);
+            });
+            return;  // Stay in editing mode
+        }
+        if (_editField == 100 && !value.empty()) {
+            // Port submitted — validate and add
+            int port = atoi(value.c_str());
+            if (port < 1 || port > 9999) {
+                showToast("Port 1-9999");
+                buildTCPMenu();
+            } else {
+                addTCPConnection(_tcpPendingHost, (uint16_t)port);
+            }
+            _tcpPendingHost.clear();
         }
         buildTCPMenu();
     } else if (_subMenu == MENU_WIFI) {
@@ -502,7 +517,7 @@ void SettingsScreen::render(M5Canvas& canvas) {
     if (_editing) {
         // Show field name
         canvas.setTextColor(Theme::MUTED);
-        std::string label = "Edit value:";
+        std::string label = _editLabel.empty() ? "Edit value:" : _editLabel;
         canvas.drawString(label.c_str(), 4, y0 + 14);
 
         // Show text input
@@ -571,6 +586,8 @@ bool SettingsScreen::handleKey(const KeyEvent& event) {
         if (_editing) {
             _editing = false;
             _editField = -1;
+            _tcpPendingHost.clear();
+            _editLabel.clear();
             return true;
         }
         if (_subMenu == MENU_TCP) {
@@ -746,8 +763,17 @@ bool SettingsScreen::handleKey(const KeyEvent& event) {
         // TCP submenu actions
         if (_subMenu == MENU_TCP) {
             if (sel == 0) {
-                // Add new connection — open text input
-                startEditing(99, "");  // field 99 = TCP host:port
+                // Add new connection — open host input first
+                _editField = 99;
+                _editing = true;
+                _editLabel = "Host:";
+                _editInput.clear();
+                _editInput.setActive(true);
+                _editInput.setMaxLength(64);
+                _editInput.setNumericOnly(false);
+                _editInput.setSubmitCallback([this](const std::string& value) {
+                    commitEdit(value);
+                });
                 return true;
             }
             int tcpIdx = sel - 1;

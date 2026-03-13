@@ -21,6 +21,7 @@ public:
     bool isActive() const { return _active; }
     void setActive(bool active) { _active = active; }
     void setMaxLength(int len) { _maxLength = len; }
+    void setNumericOnly(bool numeric) { _numericOnly = numeric; }
 
     // Callback when Enter is pressed
     using SubmitCallback = std::function<void(const std::string&)>;
@@ -33,5 +34,6 @@ private:
     bool _cursorVisible = true;
     unsigned long _lastBlink = 0;
     int _maxLength = 200;
+    bool _numericOnly = false;
     SubmitCallback _submitCb;
 };

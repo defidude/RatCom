@@ -8,6 +8,7 @@ void TextInput::setText(const std::string& text) {
 void TextInput::clear() {
     _text.clear();
     _cursorPos = 0;
+    _numericOnly = false;
 }
 
 bool TextInput::handleKey(const KeyEvent& event) {
@@ -32,6 +33,9 @@ bool TextInput::handleKey(const KeyEvent& event) {
 
     // Regular character (includes space at ASCII 32)
     if (event.character >= 32 && event.character < 127) {
+        if (_numericOnly && (event.character < '0' || event.character > '9')) {
+            return true;  // Reject non-digit input
+        }
         if ((int)_text.length() < _maxLength) {
             _text.insert(_text.begin() + _cursorPos, event.character);
             _cursorPos++;

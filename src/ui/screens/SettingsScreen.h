@@ -58,7 +58,7 @@ private:
     void disconnectWiFi();
     void connectWiFi();
 
-    void addTCPConnection(const std::string& hostPort);
+    void addTCPConnection(const std::string& host, uint16_t port);
     void toggleTCPConnection(int index);
     void removeTCPConnection(int index);
 
@@ -86,6 +86,8 @@ private:
     bool _editing = false;
     TextInput _editInput;
     int _editField = -1;
+    std::string _tcpPendingHost;
+    std::string _editLabel;
     BackCallback _backCb;
 
     // WiFi scan state
