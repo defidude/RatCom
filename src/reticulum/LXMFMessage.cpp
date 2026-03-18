@@ -345,9 +345,14 @@ bool LXMFMessage::unpackFull(const uint8_t* data, size_t len, LXMFMessage& msg) 
         mpSkipValue(content, contentLen, pos);
     }
 
-    // Generate message ID from full payload
-    RNS::Bytes fullPayload(data, len);
-    msg.messageId = RNS::Identity::full_hash(fullPayload);
+    // messageId = SHA256(dest + src + packed_content), matching Python/Rust
+    // (skip signature at bytes 32..96)
+    std::vector<uint8_t> hashInput;
+    hashInput.reserve(32 + (len - 96));
+    hashInput.insert(hashInput.end(), data, data + 32);       // dest_hash + src_hash
+    hashInput.insert(hashInput.end(), data + 96, data + len);  // packed_content
+    RNS::Bytes hashable(hashInput.data(), hashInput.size());
+    msg.messageId = RNS::Identity::full_hash(hashable);
 
     msg.incoming = true;
     msg.status = LXMFStatus::DELIVERED;
