@@ -60,7 +60,7 @@ private:
     std::deque<LXMFMessage> _outQueue;
 
     // Outbound link state (opportunistic-first, link upgrades in background)
-    RNS::Link _outLink;
+    RNS::Link _outLink{RNS::Type::NONE};
     RNS::Bytes _outLinkDestHash;
     bool _outLinkPending = false;
 

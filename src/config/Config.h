@@ -6,8 +6,8 @@
 
 #define RATPUTER_VERSION_MAJOR  1
 #define RATPUTER_VERSION_MINOR  6
-#define RATPUTER_VERSION_PATCH  2
-#define RATPUTER_VERSION_STRING "1.6.2"
+#define RATPUTER_VERSION_PATCH  3
+#define RATPUTER_VERSION_STRING "1.6.3"
 
 // --- Feature Flags ---
 #define HAS_DISPLAY     true
