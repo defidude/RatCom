@@ -238,6 +238,9 @@ void AnnounceManager::received_announce(
         if (!name.empty()) {
             auto nc = _nameCache.find(destHex);
             if (nc == _nameCache.end() || nc->second != name) {
+                if (nc == _nameCache.end() && (int)_nameCache.size() >= MAX_NAME_CACHE) {
+                    _nameCache.erase(_nameCache.begin());
+                }
                 _nameCache[destHex] = name;
                 _nameCacheDirty = true;
             }
@@ -252,6 +255,10 @@ void AnnounceManager::received_announce(
     if (!name.empty()) {
         auto nc = _nameCache.find(destHex);
         if (nc == _nameCache.end() || nc->second != name) {
+            // Evict oldest entry if cache is full (prevent unbounded heap growth)
+            if (nc == _nameCache.end() && (int)_nameCache.size() >= MAX_NAME_CACHE) {
+                _nameCache.erase(_nameCache.begin());
+            }
             _nameCache[destHex] = name;
             _nameCacheDirty = true;
         }

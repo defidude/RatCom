@@ -83,8 +83,8 @@ uint8_t IRAM_ATTR SX1262::singleTransfer(uint8_t opcode, uint16_t address, uint8
     waitOnBusy();
 
     uint8_t response;
-    digitalWrite(_ss, LOW);
     _spiModem->beginTransaction(_spiSettings);
+    digitalWrite(_ss, LOW);
     _spiModem->transfer(opcode);
     _spiModem->transfer((address & 0xFF00) >> 8);
     _spiModem->transfer(address & 0x00FF);
@@ -92,8 +92,8 @@ uint8_t IRAM_ATTR SX1262::singleTransfer(uint8_t opcode, uint16_t address, uint8
         _spiModem->transfer(0x00);
     }
     response = _spiModem->transfer(value);
-    _spiModem->endTransaction();
     digitalWrite(_ss, HIGH);
+    _spiModem->endTransaction();
 
     return response;
 }
@@ -101,58 +101,58 @@ uint8_t IRAM_ATTR SX1262::singleTransfer(uint8_t opcode, uint16_t address, uint8
 void SX1262::executeOpcode(uint8_t opcode, uint8_t* buffer, uint8_t size) {
     waitOnBusy();
 
-    digitalWrite(_ss, LOW);
     _spiModem->beginTransaction(_spiSettings);
+    digitalWrite(_ss, LOW);
     _spiModem->transfer(opcode);
     for (int i = 0; i < size; i++) {
         _spiModem->transfer(buffer[i]);
     }
-    _spiModem->endTransaction();
     digitalWrite(_ss, HIGH);
+    _spiModem->endTransaction();
 }
 
 void SX1262::executeOpcodeRead(uint8_t opcode, uint8_t* buffer, uint8_t size) {
     waitOnBusy();
 
-    digitalWrite(_ss, LOW);
     _spiModem->beginTransaction(_spiSettings);
+    digitalWrite(_ss, LOW);
     _spiModem->transfer(opcode);
     _spiModem->transfer(0x00);  // NOP byte before read
     for (int i = 0; i < size; i++) {
         buffer[i] = _spiModem->transfer(0x00);
     }
-    _spiModem->endTransaction();
     digitalWrite(_ss, HIGH);
+    _spiModem->endTransaction();
 }
 
 void SX1262::writeBuffer(const uint8_t* buffer, size_t size) {
     waitOnBusy();
 
-    digitalWrite(_ss, LOW);
     _spiModem->beginTransaction(_spiSettings);
+    digitalWrite(_ss, LOW);
     _spiModem->transfer(OP_FIFO_WRITE_6X);
     _spiModem->transfer(_fifo_tx_addr_ptr);
     for (size_t i = 0; i < size; i++) {
         _spiModem->transfer(buffer[i]);
         _fifo_tx_addr_ptr++;
     }
-    _spiModem->endTransaction();
     digitalWrite(_ss, HIGH);
+    _spiModem->endTransaction();
 }
 
 void SX1262::readBuffer(uint8_t* buffer, size_t size) {
     waitOnBusy();
 
-    digitalWrite(_ss, LOW);
     _spiModem->beginTransaction(_spiSettings);
+    digitalWrite(_ss, LOW);
     _spiModem->transfer(OP_FIFO_READ_6X);
     _spiModem->transfer(_fifo_rx_addr_ptr);
     _spiModem->transfer(0x00);  // NOP
     for (size_t i = 0; i < size; i++) {
         buffer[i] = _spiModem->transfer(0x00);
     }
-    _spiModem->endTransaction();
     digitalWrite(_ss, HIGH);
+    _spiModem->endTransaction();
 }
 
 void SX1262::waitOnBusy() {

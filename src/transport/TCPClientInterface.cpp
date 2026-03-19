@@ -122,28 +122,29 @@ void TCPClientInterface::send_outgoing(const RNS::Bytes& data) {
 
                 // Build Header2 packet: flags(1) + hops(1) + transport_id(16) + original[2:]
                 size_t new_len = data.size() + 16;
-                uint8_t wrapped[1024];
-                wrapped[0] = new_flags;
-                wrapped[1] = data.data()[1];  // hops
-                memcpy(wrapped + 2, _hubTransportId, 16);  // transport_id
-                memcpy(wrapped + 18, data.data() + 2, data.size() - 2);  // dest_hash + context + payload
+                if (new_len > sizeof(_txWrapBuffer)) { return; }
+                _txWrapBuffer[0] = new_flags;
+                _txWrapBuffer[1] = data.data()[1];  // hops
+                memcpy(_txWrapBuffer + 2, _hubTransportId, 16);  // transport_id
+                memcpy(_txWrapBuffer + 18, data.data() + 2, data.size() - 2);  // dest_hash + context + payload
 
                 Serial.printf("[TCP] TX %d->%d bytes (H1->H2 wrap) to %s:%d\n",
                               (int)data.size(), (int)new_len, _host.c_str(), _port);
-                sendFrame(wrapped, new_len);
+                sendFrame(_txWrapBuffer, new_len);
                 InterfaceImpl::handle_outgoing(data);  // Stats use original size
                 return;
             }
             else if (data.size() >= 35 && memcmp(data.data() + 2, _hubTransportId, 16) != 0) {
                 // Header2 with wrong transport_id → fix it
                 // Transport::outbound() may have used _received_from=destination_hash
-                uint8_t fixed[1024];
-                memcpy(fixed, data.data(), data.size());
-                memcpy(fixed + 2, _hubTransportId, 16);
+                size_t copyLen = data.size();
+                if (copyLen > sizeof(_txWrapBuffer)) { return; }
+                memcpy(_txWrapBuffer, data.data(), copyLen);
+                memcpy(_txWrapBuffer + 2, _hubTransportId, 16);
 
                 Serial.printf("[TCP] TX %d bytes (H2 transport_id fixed) to %s:%d\n",
                               (int)data.size(), _host.c_str(), _port);
-                sendFrame(fixed, data.size());
+                sendFrame(_txWrapBuffer, data.size());
                 InterfaceImpl::handle_outgoing(data);
                 return;
             }
@@ -163,19 +164,18 @@ void TCPClientInterface::send_outgoing(const RNS::Bytes& data) {
 // HDLC-like framing: [0x7E] [escaped data] [0x7E]
 // Buffered write — single syscall instead of per-byte writes
 void TCPClientInterface::sendFrame(const uint8_t* data, size_t len) {
-    uint8_t buf[1024];  // Max frame size (matches _rxBuffer)
     size_t pos = 0;
-    buf[pos++] = FRAME_START;
-    for (size_t i = 0; i < len && pos < sizeof(buf) - 2; i++) {
+    _txFrameBuffer[pos++] = FRAME_START;
+    for (size_t i = 0; i < len && pos < sizeof(_txFrameBuffer) - 2; i++) {
         if (data[i] == FRAME_START || data[i] == FRAME_ESC) {
-            buf[pos++] = FRAME_ESC;
-            buf[pos++] = data[i] ^ FRAME_XOR;
+            _txFrameBuffer[pos++] = FRAME_ESC;
+            _txFrameBuffer[pos++] = data[i] ^ FRAME_XOR;
         } else {
-            buf[pos++] = data[i];
+            _txFrameBuffer[pos++] = data[i];
         }
     }
-    buf[pos++] = FRAME_START;
-    _client.write(buf, pos);
+    _txFrameBuffer[pos++] = FRAME_START;
+    _client.write(_txFrameBuffer, pos);
     _client.flush();
 }
 

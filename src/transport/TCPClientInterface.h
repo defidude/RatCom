@@ -45,6 +45,12 @@ private:
     bool _escaped = false;
     size_t _rxPos = 0;
 
+    // Reusable buffers for send_outgoing/sendFrame (moved from stack to avoid
+    // stack overflow when Transport calls send_outgoing reentrantly during
+    // handle_incoming → Transport::inbound → outbound → send_outgoing)
+    uint8_t _txWrapBuffer[1024];
+    uint8_t _txFrameBuffer[1024];
+
     static constexpr uint8_t FRAME_START = 0x7E;
     static constexpr uint8_t FRAME_ESC   = 0x7D;
     static constexpr uint8_t FRAME_XOR   = 0x20;

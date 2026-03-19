@@ -7,6 +7,7 @@
 #include <string>
 #include <map>
 #include <unordered_map>
+#include "config/Config.h"
 
 class SDStore;
 class FlashStore;
@@ -90,7 +91,8 @@ private:
     unsigned long _globalAnnounceWindowStart = 0;
     unsigned int _globalAnnounceCount = 0;
     static constexpr unsigned int MAX_GLOBAL_ANNOUNCES_PER_SEC = 8;
-    static constexpr int MAX_NODES = 100;
+    static constexpr int MAX_NODES = RATPUTER_MAX_NODES;
+    static constexpr int MAX_NAME_CACHE = 200;  // Cap name cache to prevent heap exhaustion
     static constexpr unsigned long CONTACT_SAVE_INTERVAL_MS = 30000;
     static constexpr unsigned long ANNOUNCE_MIN_INTERVAL_MS = 200;  // Rate-limit announce processing
 };
