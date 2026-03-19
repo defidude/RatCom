@@ -41,7 +41,7 @@ struct LXMFMessage {
     static std::vector<uint8_t> packContent(double timestamp, const std::string& content, const std::string& title);
 
     // Pack full wire payload (source_hash + content + signature)
-    std::vector<uint8_t> packFull(const RNS::Identity& signingIdentity) const;
+    std::vector<uint8_t> packFull(const RNS::Identity& signingIdentity);
 
     // Unpack from wire payload
     static bool unpackFull(const uint8_t* data, size_t len, LXMFMessage& msg);

@@ -249,7 +249,7 @@ std::vector<uint8_t> LXMFMessage::packContent(double timestamp, const std::strin
     return buf;
 }
 
-std::vector<uint8_t> LXMFMessage::packFull(const RNS::Identity& signingIdentity) const {
+std::vector<uint8_t> LXMFMessage::packFull(const RNS::Identity& signingIdentity) {
     std::vector<uint8_t> packed = packContent(timestamp, content, title);
 
     if (sourceHash.size() < 16 || destHash.size() < 16) {
@@ -266,12 +266,15 @@ std::vector<uint8_t> LXMFMessage::packFull(const RNS::Identity& signingIdentity)
     hashed_part.insert(hashed_part.end(), packed.begin(), packed.end());
 
     RNS::Bytes hashedBytes(hashed_part.data(), hashed_part.size());
-    RNS::Bytes messageHash = RNS::Identity::full_hash(hashedBytes);
+    RNS::Bytes msgHash = RNS::Identity::full_hash(hashedBytes);
+
+    // Store messageId = SHA256(dest + src + payload), matching Python LXMessage.pack()
+    messageId = msgHash;
 
     std::vector<uint8_t> signed_part;
-    signed_part.reserve(hashed_part.size() + messageHash.size());
+    signed_part.reserve(hashed_part.size() + msgHash.size());
     signed_part.insert(signed_part.end(), hashed_part.begin(), hashed_part.end());
-    signed_part.insert(signed_part.end(), messageHash.data(), messageHash.data() + messageHash.size());
+    signed_part.insert(signed_part.end(), msgHash.data(), msgHash.data() + msgHash.size());
 
     RNS::Bytes signableBytes(signed_part.data(), signed_part.size());
     RNS::Bytes sig = signingIdentity.sign(signableBytes);
@@ -280,10 +283,10 @@ std::vector<uint8_t> LXMFMessage::packFull(const RNS::Identity& signingIdentity)
         return {};
     }
 
-    // Wire: [dest_hash:16][src_hash:16][signature:64][packed_content]
+    // Wire (opportunistic): [src_hash:16][signature:64][packed_content]
+    // dest_hash is carried by the RNS packet header, not the LXMF payload
     std::vector<uint8_t> payload;
-    payload.reserve(16 + 16 + 64 + packed.size());
-    payload.insert(payload.end(), destHash.data(), destHash.data() + 16);
+    payload.reserve(16 + 64 + packed.size());
     payload.insert(payload.end(), sourceHash.data(), sourceHash.data() + 16);
     payload.insert(payload.end(), sig.data(), sig.data() + 64);
     payload.insert(payload.end(), packed.begin(), packed.end());
