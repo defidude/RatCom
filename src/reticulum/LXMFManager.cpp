@@ -191,7 +191,7 @@ bool LXMFManager::sendDirect(LXMFMessage& msg) {
     // Background: establish link for future messages to this peer
     if (!_outLinkPending && (!_outLink || _outLinkDestHash != msg.destHash
         || _outLink.status() == RNS::Type::Link::CLOSED)) {
-        _outLinkDestHash = msg.destHash;
+        _outLinkPendingHash = msg.destHash;
         _outLinkPending = true;
         Serial.printf("[LXMF] Establishing link to %s for future messages\n",
                       msg.destHash.toHex().substr(0, 8).c_str());
@@ -216,6 +216,7 @@ void LXMFManager::onPacketReceived(const RNS::Bytes& data, const RNS::Packet& pa
 void LXMFManager::onOutLinkEstablished(RNS::Link& link) {
     if (!_instance) return;
     _instance->_outLink = link;
+    _instance->_outLinkDestHash = _instance->_outLinkPendingHash;
     _instance->_outLinkPending = false;
     Serial.printf("[LXMF] Outbound link established to %s\n",
                   _instance->_outLinkDestHash.toHex().substr(0, 8).c_str());

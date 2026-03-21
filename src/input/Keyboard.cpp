@@ -32,14 +32,8 @@ void Keyboard::update() {
     }
 
     // Fn + backtick = ESC on Cardputer Adv
-    // The hardware may not produce ASCII 27, so we synthesize it
+    // The hardware ESC key shares the backtick key — Fn must be held
     if (_event.fn && _event.character == '`') {
-        _event.character = 27;
-    }
-    // Fn pressed with no character output and no other special keys — likely ESC key
-    if (_event.fn && _event.character == 0 && !_event.ctrl &&
-        !_event.enter && !_event.del && !_event.tab && !_event.space &&
-        !_event.shift && !_event.alt && !_event.opt) {
         _event.character = 27;
     }
 
