@@ -119,7 +119,13 @@ void LoRaInterface::loop() {
         memcpy(buf.writable(payloadSize), raw + RNODE_HEADER_L, payloadSize);
         InterfaceImpl::handle_incoming(buf);
 
-        _radio->receive();
+        // Re-enter RX — but only if handle_incoming didn't trigger a TX.
+        // handle_incoming() can synchronously call send_outgoing() (for link
+        // proofs, path responses), which starts an async TX via endPacket(true).
+        // Calling receive() here would abort that TX (clears IRQ flags + enters RX).
+        if (!_txPending) {
+            _radio->receive();
+        }
     } else if (packetSize > 0) {
         Serial.printf("[LORA_IF] RX runt packet (%d bytes), discarding\n", packetSize);
         _radio->receive();
