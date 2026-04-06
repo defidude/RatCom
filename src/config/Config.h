@@ -6,8 +6,8 @@
 
 #define RATCOM_VERSION_MAJOR  1
 #define RATCOM_VERSION_MINOR  7
-#define RATCOM_VERSION_PATCH  6
-#define RATCOM_VERSION_STRING "1.7.6"
+#define RATCOM_VERSION_PATCH  8
+#define RATCOM_VERSION_STRING "1.7.8"
 
 // --- Feature Flags ---
 #define HAS_DISPLAY     true
