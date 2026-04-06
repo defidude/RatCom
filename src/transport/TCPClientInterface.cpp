@@ -127,6 +127,7 @@ void TCPClientInterface::loop() {
                         InterfaceImpl::handle_outgoing(pending);
                         Serial.printf("[TCP] TX %d bytes (flushed pending announce) to %s:%d\n",
                                       (int)pending.size(), _host.c_str(), _port);
+                        Serial.printf("[ANN-WIRE] %s\n", pending.toHex().c_str());
                     }
                     _pendingAnnounces.clear();
                 }
@@ -152,14 +153,18 @@ void TCPClientInterface::send_outgoing(const RNS::Bytes& data) {
         return;
     }
 
-    // Wrap Header1 non-announce packets as Header2 for TCP transport
+    // Wrap Header1 DATA packets as Header2 for TCP transport
     // (mirrors Rust actor.rs:653-678 — hub drops raw Header1 data packets)
+    // ANNOUNCE (0x01) and PROOF (0x03) are NOT wrapped:
+    //   - Announces are broadcast as-is
+    //   - Proofs (especially LRPROOF) must stay Header1 so the hub routes
+    //     them via its link_table, not the path table
     if (_hubTransportIdKnown && data.size() >= 19) {
         uint8_t flags = data.data()[0];
         uint8_t header_type = (flags >> 6) & 0x01;
         uint8_t packet_type = flags & 0x03;
 
-        if (packet_type != 0x01) {  // Not ANNOUNCE
+        if (packet_type == 0x00 || packet_type == 0x02) {  // DATA or LINKREQUEST only
             if (header_type == 0) {
                 // Header1 → wrap as Header2 (handles hops==1, hops==0, unknown path)
                 uint8_t new_flags = flags | 0x50;  // Set Header2 (bit 6) + Transport (bit 4)
@@ -215,6 +220,11 @@ void TCPClientInterface::send_outgoing(const RNS::Bytes& data) {
         // Passthrough: announces, correct Header2
         sendFrame(data.data(), data.size());
         Serial.printf("[TCP] TX %d bytes (passthrough) to %s:%d\n", (int)data.size(), _host.c_str(), _port);
+        // Log full hex for announce packets (for offline Python validation)
+        if (data.size() >= 1 && (data.data()[0] & 0x03) == 0x01) {
+            RNS::Bytes tmp(data.data(), data.size());
+            Serial.printf("[ANN-WIRE] %s\n", tmp.toHex().c_str());
+        }
     }
     InterfaceImpl::handle_outgoing(data);
 }

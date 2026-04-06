@@ -138,9 +138,9 @@ static void reloadTCPClients() {
                 snprintf(name, sizeof(name), "TCP.%s", ep.host.c_str());
                 auto* tcp = new TCPClientInterface(ep.host.c_str(), ep.port, name);
                 tcpIfaces.emplace_back(tcp);
-                // MODE_GATEWAY = "this interface connects TO a gateway/hub"
-                // Required for path discovery through the hub (we are still an endpoint)
-                tcpIfaces.back().mode(RNS::Type::Interface::MODE_GATEWAY);
+                // MODE_FULL = standard client mode for connecting to a hub
+                // (MODE_GATEWAY is for the server-side interface facing clients)
+                tcpIfaces.back().mode(RNS::Type::Interface::MODE_FULL);
                 RNS::Transport::register_interface(tcpIfaces.back());
                 tcp->start();
                 tcpClients.push_back(tcp);
